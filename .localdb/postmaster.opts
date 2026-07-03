@@ -1,0 +1,1 @@
+/home/hitman45/Personal/Web/nepaeng-platform/node_modules/@embedded-postgres/linux-x64/native/bin/postgres "-D" "./.localdb" "-p" "5432"

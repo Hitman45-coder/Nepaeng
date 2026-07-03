@@ -1,0 +1,283 @@
+// NepaEng Platform — Prisma schema
+// PostgreSQL + Prisma ORM
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum Role {
+  ADMINISTRATOR
+  SENIOR_ENGINEER
+  ENGINEER
+  BOOKKEEPER
+}
+
+enum Discipline {
+  FIRE
+  MECHANICAL
+  HYDRAULICS
+  ELECTRICAL
+  STORMWATER
+}
+
+enum ProposalStatus {
+  PENDING
+  WON
+  LOST
+}
+
+enum TimesheetStatus {
+  DRAFT
+  SUBMITTED
+  NEEDS_REVISION
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ActivityType {
+  PROJECT
+  ANNUAL_LEAVE
+  MEDICAL_LEAVE
+  TRAINING
+  PUBLIC_HOLIDAY
+  OFFICE
+  ADMINISTRATION
+}
+
+// =============================================================================
+// USER — Enhanced with timesheet profile fields
+// =============================================================================
+
+model User {
+  id           String      @id @default(uuid())
+  name         String
+  email        String      @unique
+  passwordHash String
+  role         Role
+  isActive     Boolean     @default(true)
+  mustResetPassword Boolean @default(false)
+
+  // ---- Organisational fields ----
+  department   String?
+  team         String?
+  position     String?     // e.g. "Project Engineer", "Senior Engineer"
+
+  // ---- Timesheet approval assignment ----
+  // Primary approver for this employee's timesheets
+  defaultApproverId String?
+  defaultApprover   User?   @relation("DefaultApproverRelation", fields: [defaultApproverId], references: [id])
+  approvesFor       User[]  @relation("DefaultApproverRelation")
+
+  // Backup approver (fallback if primary is unavailable)
+  backupApproverId  String?
+  backupApprover    User?   @relation("BackupApproverRelation", fields: [backupApproverId], references: [id])
+  backupApprovesFor User[]  @relation("BackupApproverRelation")
+
+  // Legacy manager relation (kept for backward compat / org chart)
+  managerId String?
+  manager   User?   @relation("ManagerRelation", fields: [managerId], references: [id])
+  reports   User[]  @relation("ManagerRelation")
+
+  // ---- Timesheet permission flags ----
+  timesheetEnabled      Boolean @default(true)
+  canApprove            Boolean @default(false)
+  canExportPdf          Boolean @default(false)
+  canUnlockApproved     Boolean @default(false)
+  maxWeeklyHours        Decimal @db.Decimal(4, 1) @default(42)
+  expectedDailyHours    Decimal @db.Decimal(3, 1) @default(7)
+
+  // ---- Relations ----
+  projects            Project[]          @relation("AssignedEngineers")
+  timesheetHeaders    TimesheetHeader[]  @relation("EmployeeTimesheets")
+  approvedTimesheets  TimesheetHeader[]  @relation("ApproverTimesheets")
+  approvalActions     ApprovalHistory[]
+  comments            Comment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@index([managerId])
+  @@index([defaultApproverId])
+  @@index([department])
+  @@index([team])
+}
+
+// =============================================================================
+// PROPOSALS & PROJECTS (unchanged)
+// =============================================================================
+
+model Proposal {
+  id             String         @id @default(uuid())
+  proposalNumber String         @unique
+  projectName    String
+  clientName     String
+  clientEmail    String
+  clientCompany  String?
+  proposedFee    Decimal        @db.Decimal(12, 2)
+  scope          Discipline[]
+  status         ProposalStatus @default(PENDING)
+
+  convertedProject Project?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+model Project {
+  id            String       @id @default(uuid())
+  projectNumber String       @unique
+  projectName   String
+  clientDetails Json
+  approvedFee   Decimal      @db.Decimal(12, 2)
+  scopeOfWork   Discipline[]
+  isIssuedOut   Boolean      @default(false)
+
+  assignedEngineers User[] @relation("AssignedEngineers")
+
+  myobInvoiceNumber String?
+  myobInvoiceUid    String?
+  isInvoiced        Boolean @default(false)
+  isPaid            Boolean @default(false)
+
+  proposalId String?   @unique
+  proposal   Proposal? @relation(fields: [proposalId], references: [id])
+
+  comments       Comment[]
+  timesheetLines TimesheetLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isIssuedOut])
+  @@index([isInvoiced])
+  @@index([isPaid])
+}
+
+model Comment {
+  id          String   @id @default(uuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  text        String
+  ganttStart  DateTime
+  ganttEnd    DateTime
+  progressPct Int      @default(0)
+  discipline  Discipline?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([userId])
+}
+
+// =============================================================================
+// TIMESHEET MODULE — Weekly grid with employee-centric approval workflow
+// =============================================================================
+
+model TimesheetHeader {
+  id           String          @id @default(uuid())
+  employeeId   String
+  employee     User            @relation("EmployeeTimesheets", fields: [employeeId], references: [id])
+  weekStart    DateTime        // Sunday
+  weekEnd      DateTime        // Friday
+  status       TimesheetStatus @default(DRAFT)
+  totalHours   Decimal         @db.Decimal(5, 1) @default(0)
+
+  // Employee weekly comment (visible to approver)
+  weeklyComment String?
+
+  submittedDate DateTime?
+  approvedDate  DateTime?
+  approvedById  String?
+  approvedBy    User?          @relation("ApproverTimesheets", fields: [approvedById], references: [id])
+
+  // Approval comment (manager's note on approval or general feedback)
+  approvalComment String?
+
+  lines           TimesheetLine[]
+  approvalHistory ApprovalHistory[]
+
+  // Audit fields
+  createdAt   DateTime @default(now())
+  createdBy   String?
+  modifiedAt  DateTime @updatedAt
+  modifiedBy  String?
+  ipAddress   String?
+
+  @@unique([employeeId, weekStart])
+  @@index([status])
+  @@index([employeeId])
+  @@index([weekStart])
+  @@index([approvedById])
+}
+
+model TimesheetLine {
+  id             String       @id @default(uuid())
+  timesheetId    String
+  timesheet      TimesheetHeader @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+
+  projectId      String?
+  project        Project?     @relation(fields: [projectId], references: [id])
+  activityType   ActivityType @default(PROJECT)
+
+  // Hours per day (Sun–Fri)
+  sunday         Decimal      @db.Decimal(3, 1) @default(0)
+  monday         Decimal      @db.Decimal(3, 1) @default(0)
+  tuesday        Decimal      @db.Decimal(3, 1) @default(0)
+  wednesday      Decimal      @db.Decimal(3, 1) @default(0)
+  thursday       Decimal      @db.Decimal(3, 1) @default(0)
+  friday         Decimal      @db.Decimal(3, 1) @default(0)
+  totalHours     Decimal      @db.Decimal(4, 1) @default(0)
+
+  // Per-row comment (employee describes work done on this project/activity)
+  lineComment    String?
+
+  sortOrder      Int          @default(0)
+
+  @@index([timesheetId])
+  @@index([projectId])
+  @@unique([timesheetId, projectId, activityType])
+}
+
+model ApprovalHistory {
+  id           String          @id @default(uuid())
+  timesheetId  String
+  timesheet    TimesheetHeader @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+  status       TimesheetStatus
+  comment      String?
+  userId       String
+  user         User            @relation(fields: [userId], references: [id])
+  actionDate   DateTime        @default(now())
+  ipAddress    String?
+
+  @@index([timesheetId])
+  @@index([userId])
+}
+
+// =============================================================================
+// MYOB (unchanged)
+// =============================================================================
+
+model MyobSettings {
+  id            Int      @id @default(1)
+  accessToken   String
+  refreshToken  String
+  companyFileId String
+  companyFileUri String?
+  expiresAt     DateTime
+  updatedAt     DateTime @updatedAt
+}

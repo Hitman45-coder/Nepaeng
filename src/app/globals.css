@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 18% 14%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 18% 14%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 18% 14%;
+
+    --primary: 222 47% 31%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 20%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 210 40% 94%;
+    --accent-foreground: 222 47% 20%;
+
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214 25% 90%;
+    --input: 214 25% 88%;
+    --ring: 222 47% 31%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222 22% 11%;
+    --foreground: 210 40% 96%;
+    --card: 222 22% 13%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 22% 13%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 210 40% 96%;
+    --primary-foreground: 222 47% 16%;
+    --secondary: 217 19% 20%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 19% 20%;
+    --muted-foreground: 215 16% 65%;
+    --accent: 217 19% 24%;
+    --accent-foreground: 210 40% 96%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 19% 24%;
+    --input: 217 19% 24%;
+    --ring: 213 27% 70%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* High-density dashboard tweaks */
+@layer components {
+  .data-table th {
+    @apply px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground;
+  }
+  .data-table td {
+    @apply px-3 py-2 text-sm;
+  }
+}
+
+/* ---- frappe-gantt overrides (loaded from node_modules CSS) ---- */
+.gantt-container {
+  @apply rounded-md border bg-card;
+}
+.gantt .bar {
+  fill: hsl(var(--primary));
+}
+.gantt .bar-progress {
+  fill: hsl(222 47% 52%);
+}
+.gantt .bar-label {
+  fill: #fff;
+}
